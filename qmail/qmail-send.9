@@ -115,6 +115,10 @@ notice to
 (If that bounces,
 .B qmail-send
 gives up.)
+As a special case, if the first line of
+.IR doublebounceto
+is blank (contains a single linefeed), qmail-send will not queue
+the double-bounce at all.
 .TP 5
 .I envnoathost
 Presumed domain name for addresses without @ signs.

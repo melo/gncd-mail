@@ -683,6 +683,8 @@ unsigned long id;
   }
  if (str_equal(sender.s,"#@[]"))
    log3("triple bounce: discarding ",fn2.s,"\n");
+ else if (!*sender.s && *doublebounceto.s == '@')
+   log3("double bounce: discarding ",fn2.s,"\n");
  else
   {
    if (qmail_open(&qqt) == -1)
