@@ -616,7 +616,7 @@ void reread(void)
   }
 }
 
-void main()
+int main()
 {
  datetime_sec wakeup;
  fd_set rfds;
