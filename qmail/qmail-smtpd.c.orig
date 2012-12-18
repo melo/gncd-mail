@@ -179,7 +179,6 @@ stralloc liphost = {0};
 int bmfok = 0;
 stralloc bmf = {0};
 struct constmap mapbmf;
-unsigned int earlytalkerdroptime = 0;
 
 void setup()
 {
@@ -208,9 +207,6 @@ void setup()
  
   remoteip = env_get("TCPREMOTEIP");
   if (!remoteip) remoteip = "unknown";
-  if (control_readint(&earlytalkerdroptime,"control/earlytalkerdroptime") == -1) die_control();
-  x = env_get("EARLYTALKERDROPTIME");
-  if (x) { scan_ulong(x,&u); earlytalkerdroptime = u; }
   local = env_get("TCPLOCALHOST");
   if (!local) local = env_get("TCPLOCALIP");
   if (!local) local = "unknown";
@@ -373,28 +369,6 @@ struct qmail qqt;
 unsigned int bytestooverflow = 0;
 unsigned int messagebytes = 0;
 
-void earlytalkercheck(delay)
-unsigned int delay;
-{
-  int r;
-  r = timeoutread(delay,0,ssinbuf,sizeof ssinbuf);
-  if (r == -1) if (errno == error_timeout) return; /* Timeout ==> No early talking */
-
-  /* Explain result of timeoutread and exit */
-  enew();
-  if      (r<0) eout3("Error before greeting (",error_str(errno),")");
-  else if (r==0) eout("Disconnect before greeting");
-  else /* Earlytalker */
-  {
-    eout("Data sent before greeting");
-    out("554 SMTP protocol violation\r\n"); flush();
-  }
-
-  eout(": quitting\n");
-  eflush();
-  _exit(1);
-}
-
 void put(ch)
 char *ch;
 {
@@ -539,7 +513,6 @@ void main()
   if (chdir(auto_qmail) == -1) die_control();
   setup();
   if (ipme_init() != 1) die_ipme();
-  if (earlytalkerdroptime) earlytalkercheck(earlytalkerdroptime);
   smtp_greet("220 ");
   out(" ESMTP\r\n");
   if (commands(&ssin,&smtpcommands) == 0) die_read();
