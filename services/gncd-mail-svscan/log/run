@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Logger for our service svscan
+#
+
+
+## Load this svscan service config
+. ../cfg
+
+
+## Our logger definition
+LOGGER_NAME="$SRV-svscan"
+LOGGER_DIR="$SRV_LOG_DIR/$LOGGER_NAME"
+
+
+## Make sure our logs destination exist
+if [ ! -d "$LOGGER_DIR" ] ; then
+  mkdir -p "$LOGGER_DIR"
+  chown -R "$SRV_USER_ID:$SRV_GROUP_ID" "$LOGGER_DIR"
+fi
+
+
+## Make sure there is a valid main-* symlink to our logs
+rm "main-*"
+ln -s "$LOGGER_DIR" "main-$LOGGER_NAME"
+
+
+## Start our multilog'er
+exec setuidgid $SRV_USER_ID multilog t n10 s1000000 "./main-$LOGGER_NAME"

@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# Generic svscan for a service run file
+#
+
+## Basic setup: stderr redirected to our logger, and die if
+## anything fails
+exec 2>&1
+set -e
+
+
+## Load our basic service configuration
+. ./cfg
+
+
+## Setup path to find djb utils
+PATH_EXTRA=
+for path in /usr/local/lib /command ; do
+  if [ -x "$path/svscan" -o -x "$path/tcpserver" ] ; then
+    PATH_EXTRA="$path:"
+  fi
+done
+if [ -n "$PATH_EXTRA" ] ; then
+  PATH="$PATH_EXTRA$PATH"
+  export PATH
+fi
+
+
+## Make sure we have a service directory and that our service user can
+## control new services
+SRV_DIR="$HOME/service"
+[ ! -d "$SRV_DIR" ]  && mkdir "$SRV_DIR"
+chown "$SRV_USER_ID:$SRV_GROUP_ID" "$SRV_DIR"
+
+
+## Start our service svscan
+printf "Starting svscan for $SRV at "
+date
+[ -z "$SVSCAN_RUN_AS" ] && exec svscan "$SRV_DIR"
+exec setuidgid "$SVSCAN_RUN_AS" svscan "$SRV_DIR"

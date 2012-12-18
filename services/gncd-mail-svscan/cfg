@@ -1,0 +1,43 @@
+#
+# Configuration for our gncd-mail service
+#
+
+## Name of this service
+SRV="gncd-mail"
+export SRV
+
+
+## Our home, where all of our service files live
+HOME=/home/mailsrv
+export HOME
+
+
+## Where our logs will reside
+SRV_LOG_DIR="$HOME/logs"
+export SRV_LOG_DIR
+
+
+## Service env: each service can use this script to load adition configurations
+SRV_CONFIG="$HOME/releases/etc/config.sh"
+export SRV_CONFIG
+
+
+## Our service UID
+SRV_USER_ID=mailsrv
+SRV_GROUP_ID=mailsrv
+export SRV_USER_ID SRV_GROUP_ID
+
+
+## If all services should run under a non-root user_id, set this option
+## For example, RUN_AS=$SRV_USER_ID
+## If blank, all will run as root
+SVSCAN_RUN_AS=
+
+
+### Configuration ends here ###
+
+## Make sure our logs directory exists
+if [ ! -d "$SRV_LOG_DIR" ] ; then
+  mkdir -p "$SRV_LOG_DIR"
+  chown "$SRV_USER_ID:$SRV_GROUP_ID" "$SRV_LOG_DIR"
+fi
