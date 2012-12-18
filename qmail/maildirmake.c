@@ -3,7 +3,7 @@
 
 #define FATAL "maildirmake: fatal: "
 
-void main(argc,argv)
+int main(argc,argv)
 int argc;
 char **argv;
 {

@@ -444,7 +444,7 @@ int len;
  substdio_putsflush(subfdoutsmall,"\n");
 }
 
-void main(argc,argv)
+int main(argc,argv)
 int argc;
 char **argv;
 {

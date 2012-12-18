@@ -1,7 +1,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-void main()
+int main()
 {
   mkfifo("temp-trymkffo",0);
 }

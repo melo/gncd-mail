@@ -4,7 +4,7 @@
 
 #define FN "temp-trynpbg1.fifo"
 
-void main()
+int main()
 {
   int flagbug;
   struct timeval instant;
