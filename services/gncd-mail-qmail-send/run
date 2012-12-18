@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# qmail-send run file
+#
+
+exec 2>&1
+
+[ -e "$SRV_CONFIG" ] || (echo "FATAL: failed to find $SRV_CONFIG"; exit 1)
+. $SRV_CONFIG
+
+exec env - PATH="$QMAIL_DIR/bin:$PATH" \
+  qmail-start "`cat $QMAIL_CONTROL_DIR/defaultdelivery`"

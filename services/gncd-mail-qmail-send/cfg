@@ -1,0 +1,6 @@
+#
+# Configuration for qmail-send component of gncd-mail service
+#
+
+APP=gncd-mail-qmail-send
+export APP
