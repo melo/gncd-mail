@@ -16,6 +16,7 @@
 #include "auto_break.h"
 #include "auto_qmail.h"
 #include "auto_usera.h"
+#include "exit.h"
 
 void die_chdir()
 {
