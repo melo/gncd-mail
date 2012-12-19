@@ -16,6 +16,7 @@
 #include "auto_break.h"
 #include "auto_qmail.h"
 #include "auto_usera.h"
+#include "exit.h"
 
 void die_chdir()
 {
@@ -228,7 +229,7 @@ int fd;
 substdio ss;
 char ssbuf[SUBSTDIO_INSIZE];
 
-void main(argc,argv)
+int main(argc,argv)
 int argc;
 char **argv;
 {

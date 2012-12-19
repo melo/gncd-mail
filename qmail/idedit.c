@@ -120,7 +120,7 @@ char *pos3;
     strerr_die3x(111,FATAL,"excessively large gid for ",group);
 }
 
-void main(argc,argv)
+int main(argc,argv)
 int argc;
 char **argv;
 {

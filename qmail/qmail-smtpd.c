@@ -537,7 +537,7 @@ struct commands smtpcommands[] = {
 , { 0, err_unrecog, flush }
 } ;
 
-void main()
+int main()
 {
   sig_pipeignore();
   /* esetfd(2); Errors default to FD2 (stderr), change here if needed */

@@ -1,6 +1,6 @@
 #include <signal.h>
 
-void main()
+int main()
 {
   sigset_t ss;
  
