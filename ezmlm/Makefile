@@ -164,6 +164,14 @@ config.lo: \
 libcompile config.c byte.h config.h stralloc.h gen_alloc.h die.h hasattribute.h messages.h getconf.h idx.h slurp.h str.h strerr.h hasattribute.h wrap.h
 	./libcompile config.c
 
+conf-cc: \
+conf-cc.tmpl tmpl2conf.pl
+	perl tmpl2conf.pl < conf-cc.tmpl > conf-cc
+
+conf-ld: \
+conf-ld.tmpl tmpl2conf.pl
+	perl tmpl2conf.pl < conf-ld.tmpl > conf-ld
+
 constmap.lo: \
 libcompile constmap.c constmap.h alloc.h case.h
 	./libcompile constmap.c

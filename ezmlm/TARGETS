@@ -37,6 +37,8 @@ clean
 compile
 concatHDR.lo
 config.lo
+conf-cc
+conf-ld
 constmap.lo
 cookie.lo
 copy.lo
