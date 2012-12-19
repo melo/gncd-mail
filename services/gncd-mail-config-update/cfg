@@ -1,0 +1,6 @@
+#
+# Configuration for config-update component of gncd-mail service
+#
+
+APP=gncd-mail-config-update
+export APP

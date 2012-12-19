@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# Update configuration from release to live
+#
+# Use gncd-mail-update-config to trigger this process
+#
+
+exec 2>&1
+
+[ -e "$SRV_CONFIG" ] || (echo "FATAL: failed to find $SRV_CONFIG"; exit 1)
+. $SRV_CONFIG
+
+HOST=`hostname -f`
+CFG="$RELEASE_DIR/etc/$HOST"
+
+echo "### Starting config-update run using '$CFG' config"
+
+echo "... update qmail config"
+rsync -ai --delete-after "$CFG/qmail/" "$QMAIL_CONTROL_DIR"
+(cd "$QMAIL_CONTROL_DIR" && [ -e "Makefile" ] && echo "... running qmail config Makefile" && make)
+
+echo "... update qmail system aliases"
+(
+  src_dir="$CFG/aliases"
+  dst_dir="$QMAIL_DIR/alias"
+
+  ## link new aliases
+  cd "$src_dir"
+  for alias in * ; do
+    src="$src_dir/$alias"
+    dst="$dst_dir/.qmail-$alias"
+    [ ! -e "$dst" ] && echo "...... creating $alias => '$src'" && ln -s "$src" "$dst"
+  done
+
+  ## clear old aliases
+  cd "$dst_dir"
+  for alias in `ls -1 .qmail-* | cut -f2- -d-` ; do
+    src="$src_dir/$alias"
+    [ ! -e "$src" ] && echo "...... removing $alias" && rm .qmail-$alias
+  done
+
+  ## sanitize permissions
+  chmod 644 "$src_dir"/*
+  chown -h alias:nofiles "$dst_dir"/.qmail-*
+)
+
+echo "### Done config-update run using '$CFG' config"
+echo ""
+echo ""
+sleep 1

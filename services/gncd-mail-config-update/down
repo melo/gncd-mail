@@ -1,0 +1,3 @@
+This file prevents the service from running automaticaly
+
+Use svc -u to keep it up, or svc -o to run it once
