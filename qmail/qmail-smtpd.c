@@ -24,6 +24,9 @@
 #include "timeoutwrite.h"
 #include "commands.h"
 #include "errbits.h"
+#include "strerr.h"
+#include "cdb.h"
+#include "auto_break.h"
 
 #define enew()	{ eout("qmail-smtpd: pid "); epid(); eout3(" from ",remoteip,": "); }
 /* Or if you prefer shorter log messages (deduce IP from tcpserver PID entry), */
@@ -152,6 +155,8 @@ void err_databytes()
   out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n");
 }
 
+void err_vrt() { out("553 sorry, this recipient is not in my validrcptto list (#5.7.1)\r\n"); }
+void die_vrt() { out("421 too many invalid addresses, goodbye (#4.3.0)\r\n"); flush(); _exit(1); }
 
 stralloc greeting = {0};
 
@@ -186,6 +191,11 @@ stralloc bmf = {0};
 struct constmap mapbmf;
 unsigned int earlytalkerdroptime = 0;
 
+int vrtfd = -1;
+int vrtcount = 0;
+int vrtlimit = 10;
+int vrtlog_do = 0;
+
 void setup()
 {
   char *x;
@@ -205,7 +215,13 @@ void setup()
   if (bmfok == -1) die_control();
   if (bmfok)
     if (!constmap_init(&mapbmf,bmf.s,bmf.len,0)) die_nomem();
- 
+
+  x = env_get("VALIDRCPTTO_CDB");
+  if(x && *x) {
+    vrtfd = open_read(x);
+    if (-1 == vrtfd) die_control();
+  }
+
   if (control_readint(&databytes,"control/databytes") == -1) die_control();
   x = env_get("DATABYTES");
   if (x) { scan_ulong(x,&u); databytes = u; }
@@ -299,6 +315,91 @@ int bmfcheck()
   return 0;
 }
 
+void vrtlog(a,b)
+const char *a;
+const char *b;
+{
+  if (vrtlog_do) strerr_warn2(a,b,0);
+}
+
+int vrtcheck()
+{
+  static char *rcptto = "qmail-smtpd: validrcptto RCPT TO: ";
+  static char *found = "qmail-smtpd: validrcptto found: ";
+  static char *reject = "qmail-smtpd: validrcptto reject: ";
+  char *f = 0;
+  int j,k,r;
+  uint32 dlen;
+  stralloc laddr = {0};
+
+  stralloc user = {0};
+  stralloc adom = {0};
+  stralloc utry = {0};
+  stralloc dval = {0};
+
+  if (-1 == vrtfd) return 1;
+
+  /* lowercase whatever we were sent */
+  if (!stralloc_copy(&laddr,&addr)) die_nomem() ;
+  case_lowerb(laddr.s,laddr.len);
+
+  vrtlog(rcptto,laddr.s,0);
+
+  /* exact match? */
+  r = cdb_seek(vrtfd,laddr.s,laddr.len-1,&dlen) ;
+  if (r>0) f=laddr.s ;
+  else
+  {
+    j = byte_rchr(laddr.s,laddr.len,'@');
+    if (j < laddr.len)
+    {
+      /* start "-default" search loop */
+      stralloc_copyb(&user,laddr.s,j) ;
+      stralloc_copyb(&adom,laddr.s+j,laddr.len-j-1);
+
+      while(1)
+      {
+        k = byte_rchr(user.s,user.len,'-');
+        if (k >= user.len) break ;
+
+        user.len = k+1;
+        stralloc_cats(&user,"default");
+
+        stralloc_copy(&utry,&user);
+        stralloc_cat (&utry,&adom);
+        stralloc_0(&utry);
+
+        r = cdb_seek(vrtfd,utry.s,utry.len-1,&dlen);
+        if (r>0) { f=utry.s; break; }
+
+        user.len = k ;
+      }
+
+      /* try "@domain" */
+      if(!f) {
+        r = cdb_seek(vrtfd,laddr.s+j,laddr.len-j-1,&dlen) ;
+        if (r>0) f=laddr.s+j ;
+      }
+    }
+  }
+
+  if(f) {
+    if(dlen) {
+      if(!stralloc_ready(&dval,dlen)) die_nomem();
+      dval.len = read(vrtfd,dval.s,dlen);
+      if(dval.len>0) if(dval.s[0] == '-') {
+        vrtlog ( reject , f ) ;
+        return 0;
+      }
+    }
+    vrtlog ( found , f ) ;
+    return 1;
+  }
+
+
+  return 0;
+}
+
 int addrallowed()
 {
   int r;
@@ -352,6 +453,17 @@ void smtp_rcpt(arg) char *arg; {
   }
   else
     if (!addrallowed()) { err_nogateway(); return; }
+  if (!env_get("RELAYCLIENT") && !vrtcheck()) {
+    strerr_warn4("qmail-smtpd: not in validrcptto: ",addr.s,
+      " at ",remoteip,0);
+    if(vrtlimit && (++vrtcount >= vrtlimit)) {
+      strerr_warn2("qmail-smtpd: excessive validrcptto violations,"
+        " hanging up on ",remoteip,0);
+      die_vrt();
+    }
+    err_vrt();
+    return;
+  }
   if (!stralloc_cats(&rcptto,"T")) die_nomem();
   if (!stralloc_cats(&rcptto,addr.s)) die_nomem();
   if (!stralloc_0(&rcptto)) die_nomem();
@@ -539,9 +651,17 @@ struct commands smtpcommands[] = {
 
 int main()
 {
+  char *x ;
+  uint32 u;
   sig_pipeignore();
   /* esetfd(2); Errors default to FD2 (stderr), change here if needed */
   if (chdir(auto_qmail) == -1) die_control();
+
+  x = env_get("VALIDRCPTTO_LIMIT");
+  if(x) { scan_ulong(x,&u); vrtlimit = (int) u; }
+  x = env_get("VALIDRCPTTO_LOG");
+  if(x) { scan_ulong(x,&u); vrtlog_do = (int) u; }
+
   setup();
   if (ipme_init() != 1) die_ipme();
   if (earlytalkerdroptime) earlytalkercheck(earlytalkerdroptime);
