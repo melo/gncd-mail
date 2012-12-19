@@ -154,9 +154,12 @@ void err_databytes()
   enew(); eout("Exceeded DATABYTES limit\n"); eflush();
   out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n");
 }
-
 void err_vrt() { out("553 sorry, this recipient is not in my validrcptto list (#5.7.1)\r\n"); }
-void die_vrt() { out("421 too many invalid addresses, goodbye (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_vrt()
+{
+  enew(); eout("Excessive validrcptto violations, hanging up\n"); eflush();
+  out("421 too many invalid addresses, goodbye (#4.3.0)\r\n"); flush(); _exit(1);
+}
 
 stralloc greeting = {0};
 
@@ -319,7 +322,15 @@ void vrtlog(a,b)
 const char *a;
 const char *b;
 {
-  if (vrtlog_do) strerr_warn2(a,b,0);
+  if (!vrtlog_do) return;
+
+  enew();
+  eout("Validrcptto ");
+  eout(a);
+  eout(" <");
+  eoutclean(b);
+  eout(">\n");
+  eflush();
 }
 
 int vrtcheck()
@@ -454,13 +465,8 @@ void smtp_rcpt(arg) char *arg; {
   else
     if (!addrallowed()) { err_nogateway(); return; }
   if (!env_get("RELAYCLIENT") && !vrtcheck()) {
-    strerr_warn4("qmail-smtpd: not in validrcptto: ",addr.s,
-      " at ",remoteip,0);
-    if(vrtlimit && (++vrtcount >= vrtlimit)) {
-      strerr_warn2("qmail-smtpd: excessive validrcptto violations,"
-        " hanging up on ",remoteip,0);
-      die_vrt();
-    }
+    enew(); eout("Recipient not in validrcptto <"); eoutclean(addr.s); eout(">\n"); eflush();
+    if(vrtlimit && (++vrtcount >= vrtlimit)) die_vrt();
     err_vrt();
     return;
   }
