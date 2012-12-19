@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# Trigger the update of the gncd-mail service reconfiguration
+#
+
+COMPONENT="$HOME/service/gncd-mail-config-update"
+svc -o "$COMPONENT"
+
+echo "**** Type ctrl-C to end the output...."
+tail -n 3 -F "$COMPONENT/log/main-gncd-mail-config-update/current" | tai64nlocal
