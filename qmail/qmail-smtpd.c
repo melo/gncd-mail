@@ -335,9 +335,9 @@ const char *b;
 
 int vrtcheck()
 {
-  static char *rcptto = "qmail-smtpd: validrcptto RCPT TO: ";
-  static char *found = "qmail-smtpd: validrcptto found: ";
-  static char *reject = "qmail-smtpd: validrcptto reject: ";
+  static char *rcptto = "checking RCPT TO";
+  static char *found = "found";
+  static char *reject = "rejected";
   char *f = 0;
   int j,k,r;
   uint32 dlen;
@@ -354,7 +354,7 @@ int vrtcheck()
   if (!stralloc_copy(&laddr,&addr)) die_nomem() ;
   case_lowerb(laddr.s,laddr.len);
 
-  vrtlog(rcptto,laddr.s,0);
+  vrtlog(rcptto,laddr.s);
 
   /* exact match? */
   r = cdb_seek(vrtfd,laddr.s,laddr.len-1,&dlen) ;
@@ -399,14 +399,13 @@ int vrtcheck()
       if(!stralloc_ready(&dval,dlen)) die_nomem();
       dval.len = read(vrtfd,dval.s,dlen);
       if(dval.len>0) if(dval.s[0] == '-') {
-        vrtlog ( reject , f ) ;
+        vrtlog(reject, f);
         return 0;
       }
     }
-    vrtlog ( found , f ) ;
+    vrtlog(found, f);
     return 1;
   }
-
 
   return 0;
 }
