@@ -1,12 +1,13 @@
+/* Public domain, from djbdns-1.05. */
+/* As per http://cr.yp.to/djbdns/res-disaster.html */
+
 #include "str.h"
 
-unsigned int str_rchr(s,c)
-register char *s;
-int c;
+unsigned int str_rchr(const char *s,int c)
 {
-  register char ch;
-  register char *t;
-  register char *u;
+  char ch;
+  const char *t;
+  const char *u;
 
   ch = c;
   t = s;

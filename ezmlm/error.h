@@ -1,7 +1,9 @@
+/* Public domain, from daemontools-0.76. */
+
 #ifndef ERROR_H
 #define ERROR_H
 
-extern int errno;
+#include <errno.h>
 
 extern int error_intr;
 extern int error_nomem;
@@ -16,8 +18,13 @@ extern int error_again;
 extern int error_pipe;
 extern int error_perm;
 extern int error_acces;
+extern int error_nodevice;
+extern int error_proto;
+extern int error_isdir;
+extern int error_connrefused;
+extern int error_notdir;
 
-extern char *error_str();
-extern int error_temp();
+extern const char *error_str(int);
+extern int error_temp(int);
 
 #endif

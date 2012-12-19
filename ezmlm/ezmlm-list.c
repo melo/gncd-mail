@@ -1,62 +1,69 @@
-#include "stralloc.h"
-#include "substdio.h"
-#include "getln.h"
+#include <unistd.h>
 #include "strerr.h"
-#include "error.h"
 #include "readwrite.h"
+#include "substdio.h"
+#include "subfd.h"
+#include "subdb.h"
 #include "exit.h"
-#include "open.h"
+#include "fmt.h"
+#include "getconfopt.h"
+#include "messages.h"
+#include "die.h"
+#include "idx.h"
+#include "config.h"
+#include "auto_version.h"
 
-#define FATAL "ezmlm-list: fatal: "
-void die_write()
+const char FATAL[] = "ezmlm-list: fatal: ";
+const char USAGE[] =
+"ezmlm-list: usage: ezmlm-list [-mMnNvV] dir [subdir]";
+
+static int flagnumber = 0; /* default list subscribers, not number of */
+static const char *flagsubdb = 0;
+
+static struct option options[] = {
+  OPT_CSTR_FLAG(flagsubdb,'m',0,0),
+  OPT_CSTR_FLAG(flagsubdb,'M',"std",0),
+  OPT_CSTR(flagsubdb,'S',0),
+  OPT_FLAG(flagnumber,'n',1,0),
+  OPT_FLAG(flagnumber,'N',0,0),
+  OPT_END
+};
+
+char strnum[FMT_ULONG];
+
+static void die_write(void)
 {
-  strerr_die2sys(111,FATAL,"unable to write: ");
+  strerr_die2sys(111,FATAL,MSG(ERR_WRITE_STDOUT));
 }
 
-char outbuf[1024];
-substdio out = SUBSTDIO_FDBUF(write,1,outbuf,sizeof(outbuf));
-char inbuf[1024];
-substdio in;
-
-stralloc line = {0};
-
-char fn[14] = "subscribers/?";
-
-void main(argc,argv)
-int argc;
-char **argv;
+int subwrite(const char *s,unsigned int l)
 {
-  char *dir;
-  int fd;
-  int match;
+  return substdio_put(subfdout,s,l) | substdio_put(subfdout,"\n",1);
+}
 
-  dir = argv[1];
-  if (!dir) strerr_die1x(100,"ezmlm-list: usage: ezmlm-list dir");
+int dummywrite(const char *s,unsigned int l)
+{
+  return (int) l;
+  (void)s;
+}
 
-  if (chdir(dir) == -1)
-    strerr_die4sys(111,FATAL,"unable to switch to ",dir,": ");
+int main(int argc,char **argv)
+{
+  const char *subdir;
+  unsigned long n;
+  int i;
 
-  for (fn[12] = 64;fn[12] < 64 + 53;++fn[12]) {
-    fd = open_read(fn);
-    if (fd == -1) {
-      if (errno != error_noent)
-	strerr_die4sys(111,FATAL,"unable to open ",fn,": ");
-    }
-    else {
-      substdio_fdbuf(&in,read,fd,inbuf,sizeof(inbuf));
-      for (;;) {
-        if (getln(&in,&line,&match,'\0') == -1)
-	  strerr_die4sys(111,FATAL,"unable to read ",fn,": ");
-	if (!match) break;
-	if (line.s[str_chr(line.s,'\n')])
-	  strerr_die3x(111,FATAL,"newline in ",fn);
-	if (substdio_puts(&out,line.s + 1)) die_write();
-	if (substdio_put(&out,"\n",1) == -1) die_write();
-      }
-    }
+  i = getconfopt(argc,argv,options,1,0);
+  initsub(flagsubdb);
+  subdir = argv[i];
 
-  }
-
-  if (substdio_flush(&out) == -1) die_write();
+  if (flagnumber) {
+    n = putsubs(subdir,0L,52L,dummywrite);
+    if (substdio_put(subfdout,strnum,fmt_ulong(strnum,n)) == -1) die_write();
+    if (substdio_put(subfdout,"\n",1) == -1) die_write();
+  } else
+    (void) putsubs(subdir,0L,52L,subwrite);
+  if (substdio_flush(subfdout) == -1) die_write();
+  closesub();
   _exit(0);
 }

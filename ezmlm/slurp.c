@@ -1,12 +1,10 @@
 #include "stralloc.h"
 #include "slurp.h"
+#include "slurpclose.h"
 #include "error.h"
 #include "open.h"
 
-int slurp(fn,sa,bufsize)
-char *fn;
-stralloc *sa;
-int bufsize;
+int slurp(const char *fn,stralloc *sa,int bufsize)
 {
   int fd;
   fd = open_read(fn);

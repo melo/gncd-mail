@@ -1,8 +1,9 @@
+/* Public domain, from daemontools-0.76. */
+
 #ifndef LOCK_H
 #define LOCK_H
 
-extern int lock_ex();
-extern int lock_un();
-extern int lock_exnb();
+extern int lock_ex(int);
+extern int lockfile(const char *path);
 
 #endif

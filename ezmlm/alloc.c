@@ -1,18 +1,18 @@
+/* Public domain, from daemontools-0.76. */
+
+#include <stdlib.h>
 #include "alloc.h"
 #include "error.h"
-extern char *malloc();
-extern void free();
 
 #define ALIGNMENT 16 /* XXX: assuming that this alignment is enough */
-#define SPACE 4096 /* must be multiple of ALIGNMENT */
+#define SPACE 2048 /* must be multiple of ALIGNMENT */
 
 typedef union { char irrelevant[ALIGNMENT]; double d; } aligned;
 static aligned realspace[SPACE / ALIGNMENT];
 #define space ((char *) realspace)
 static unsigned int avail = SPACE; /* multiple of ALIGNMENT; 0<=avail<=SPACE */
 
-/*@null@*//*@out@*/char *alloc(n)
-unsigned int n;
+/*@null@*//*@out@*/void *alloc(unsigned int n)
 {
   char *x;
   n = ALIGNMENT + n - (n & (ALIGNMENT - 1)); /* XXX: could overflow */
@@ -22,11 +22,10 @@ unsigned int n;
   return x;
 }
 
-void alloc_free(x)
-char *x;
+void alloc_free(void *x)
 {
-  if (x >= space)
-    if (x < space + SPACE)
+  if (x >= (void*)space)
+    if (x < (void*)(space + SPACE))
       return; /* XXX: assuming that pointers are flat */
   free(x);
 }

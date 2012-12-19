@@ -1,11 +1,11 @@
+/* Public domain, from daemontools-0.76. */
+
 #include "str.h"
 
-unsigned int str_chr(s,c)
-register char *s;
-int c;
+unsigned int str_chr(const char *s,int c)
 {
-  register char ch;
-  register char *t;
+  char ch;
+  const char *t;
 
   ch = c;
   t = s;

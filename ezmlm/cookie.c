@@ -3,19 +3,22 @@
 #include "uint32.h"
 #include "surfpcs.h"
 
-void cookie(hash,key,keylen,date,addr,action)
-char *hash;
-char *key;
-unsigned int keylen;
-char *date;
-char *addr;
-char *action;
+void cookie(char *hash,
+	    const char *key,
+	    unsigned int keylen,
+	    const char *date,
+	    const char *addr,
+	    const char *action)
 {
   surfpcs s;
   uint32 seed[32];
   unsigned char out[32];
   int i;
   int j;
+
+  /* addr may be passed in as a NULL pointer.
+   * Make sure it points to a non-NULL empty string. */
+  if (addr == 0) addr = "";
 
 /*
 step 1: create seed from key. note that this doesn't have to be
@@ -25,7 +28,7 @@ if speed turns out to be a problem, switch to a CRC.
   for (i = 0;i < 32;++i) seed[i] = 0;
   for (j = 0;j < 4;++j) {
     surfpcs_init(&s,seed);
-    surfpcs_add(&s,key,keylen);
+    surfpcs_add(&s,(const unsigned char*)key,keylen);
     surfpcs_out(&s,out);
     for (i = 0;i < 32;++i) seed[i] = (seed[i] << 8) + out[i];
   }
@@ -34,9 +37,9 @@ if speed turns out to be a problem, switch to a CRC.
 step 2: apply SURF.
 */
   surfpcs_init(&s,seed);
-  surfpcs_add(&s,date,str_len(date) + 1);
-  surfpcs_add(&s,addr,str_len(addr) + 1);
-  surfpcs_add(&s,action,1);
+  surfpcs_add(&s,(const unsigned char*)date,str_len(date) + 1);
+  surfpcs_add(&s,(const unsigned char*)addr,str_len(addr) + 1);
+  surfpcs_add(&s,(const unsigned char*)action,1);
   surfpcs_out(&s,out);
 
 /*

@@ -1,22 +1,25 @@
+#include <unistd.h>
 #include "stralloc.h"
 #include "str.h"
 #include "byte.h"
+#include "case.h"
 #include "readwrite.h"
 #include "substdio.h"
+#include "subfd.h"
 #include "getln.h"
 #include "strerr.h"
+#include "messages.h"
+#include "die.h"
 
-char buf0[256];
-substdio ss0 = SUBSTDIO_FDBUF(read,0,buf0,sizeof(buf0));
+const char FATAL[] = "ezmlm-weed: fatal: ";
+const char USAGE[] =
+"ezmlm-weed: usage: ezmlm-weed";
 
-#define FATAL "ezmlm-weed: fatal: "
-
-void get(sa)
-stralloc *sa;
+void get(stralloc *sa)
 {
   int match;
-  if (getln(&ss0,sa,&match,'\n') == -1)
-    strerr_die2sys(111,FATAL,"unable to read input: ");
+  if (getln(subfdin,sa,&match,'\n') == -1)
+    strerr_die2sys(111,FATAL,MSG(ERR_READ_INPUT));
   if (!match) _exit(0);
 }
 
@@ -30,6 +33,9 @@ stralloc line6 = {0};
 stralloc line7 = {0};
 stralloc line8 = {0};
 
+stralloc boundary = {0};
+stralloc dsnline = {0};
+
 char warn1[] = "    **********************************************";
 char warn2[] = "    **      THIS IS A WARNING MESSAGE ONLY      **";
 char warn3[] = "    **  YOU DO NOT NEED TO RESEND YOUR MESSAGE  **";
@@ -40,20 +46,80 @@ int flagsw = 0;
 int flagsr = 0;
 int flagas = 0;
 int flagbw = 0;
+int flagdsn = 0;
 
-void main()
+int isboundary(void)
+/* returns 1 if line.len contains the mime bondary, 0 otherwise */
 {
-  int match;
+    if (line.s[0] == '-' && line.s[1] == '-' && line.len >= boundary.len + 3)
+      if (!byte_diff(line.s + 2,boundary.len,boundary.s))	/* boundary */
+        return 1;
+    return 0;
+}
+
+int main(void)
+{
+  unsigned int i,j;
 
   for (;;) {
     get(&line);
     if (line.len == 1) break;
-
+    if (flagdsn) {
+      if (line.s[0] == ' ' || line.s[0] == '\t')	/* continuation */
+	if (!stralloc_catb(&dsnline,line.s,line.len - 1)) die_nomem();
+      continue;
+    }
+    flagdsn = 0;
     if (stralloc_starts(&line,"Subject: success notice"))
       _exit(99);
     if (stralloc_starts(&line,"Subject: deferral notice"))
       _exit(99);
-
+    if (stralloc_starts(&line,"Precedence: bulk"))
+      _exit(99);
+    if (stralloc_starts(&line,"Precedence: junk"))
+      _exit(99);
+    if (stralloc_starts(&line,"Auto-Submitted:"))
+      _exit(99);
+    /* Mailing list signatures */
+    if (stralloc_starts(&line,"Precedence: list"))
+      _exit(99);
+    if (stralloc_starts(&line,"Mailing-List:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-ID:"))
+      _exit(99);
+    if (stralloc_starts(&line,"X-Mailing-List:"))
+      _exit(99);
+    if (stralloc_starts(&line,"X-ML-Name:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Help:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Unsubscribe:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Subscribe:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Post:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Owner:"))
+      _exit(99);
+    if (stralloc_starts(&line,"List-Archive:"))
+      _exit(99);
+/* for Novell Groupwise */
+    if (stralloc_starts(&line,"Subject: Message status - delivered"))
+      _exit(99);
+    if (stralloc_starts(&line,"Subject: Message status - opened"))
+      _exit(99);
+    if (stralloc_starts(&line,"Subject: Out of Office AutoReply:"))
+      _exit(99);
+    /* Other autoresponders */
+    if (stralloc_starts(&line,"X-Amazon-Auto-Reply:"))
+      _exit(99);
+    if (stralloc_starts(&line,"X-Mailer: KANA Response"))
+      _exit(99);
+    if (stralloc_starts(&line,"Thread-Topic: AutoResponse"))
+      _exit(99);
+    if (stralloc_starts(&line,"Subject: AutoResponse -"))
+      _exit(99);
+    
     if (stralloc_starts(&line,"From: Mail Delivery Subsystem <MAILER-DAEMON@"))
       flagmds = 1;
     if (stralloc_starts(&line,"Subject: Warning: could not send message"))
@@ -62,6 +128,72 @@ void main()
       flagsr = 1;
     if (stralloc_starts(&line,"Auto-Submitted: auto-generated (warning"))
       flagas = 1;
+    if (case_startb(line.s,line.len,"Content-type: multipart/report")) {
+      if (!stralloc_copyb(&dsnline,line.s,line.len - 1)) die_nomem();
+      flagdsn = 1;
+    }
+  }			/* end of header */
+
+  if (dsnline.len > 0) {	/* always only one recipient/action */
+    flagdsn = 0;	/* will be set for correct report type */
+    for (i=0; i < dsnline.len; i += 1+byte_chr(dsnline.s+i,dsnline.len-i,';')) {
+      while (dsnline.s[i] == ' ' || dsnline.s[i] == '\t')
+	if (++i >= dsnline.len) break;
+      if (case_startb(dsnline.s + i,dsnline.len - i,"report-type=")) {
+	i += 12;
+	while (dsnline.s[i] ==' ' || dsnline.s[i] =='\t' || dsnline.s[i] =='"')
+	  if (++i >= dsnline.len) break;
+	if (case_startb(dsnline.s + i,dsnline.len - i,"delivery-status"))
+	  flagdsn = 1;
+      } else if (case_startb(dsnline.s + i,dsnline.len - i,"boundary=")) {
+	i += 9;
+	while (dsnline.s[i] ==' ' || dsnline.s[i] =='\t')
+	  if (++i >= dsnline.len) break;
+	if (dsnline.s[i] == '"') {
+	  if (++i >= dsnline.len) break;
+	  j = i + byte_chr(dsnline.s + i,dsnline.len - i,'"');
+	  if (j >= dsnline.len) break;
+	} else {
+	  j = i;
+	  while (dsnline.s[j] !=' ' && dsnline.s[j] !='\t' &&
+		dsnline.s[j] !=';')
+	    if (++j >= dsnline.len) break;
+	}				/* got boundary */
+	if (!stralloc_copyb(&boundary,dsnline.s+i,j-i)) die_nomem();
+      }
+    }
+  }
+  if (flagdsn && boundary.len) {	/* parse DSN message */
+    get(&line);			/* if bad format we exit(0) via get() */
+    for (;;) {
+      if (isboundary()) {
+      if (line.len == boundary.len + 5 && line.s[line.len - 1] == '-'
+		&& line.s[line.len - 2] == '-')
+        _exit(99);			/* end: not failure report */
+        get(&line);			/* Content-type */
+        if (case_startb(line.s,line.len,"content-type:")) {
+	  i = 13;
+	  while (line.s[i] == ' ' || line.s[i] == '\t')
+		if (++i >= line.len) break;
+	  if (case_startb(line.s+i,line.len-i,"message/delivery-status")) {
+	    for (;;) {
+	      get(&line);
+	      if (isboundary()) break;
+	      if (case_startb(line.s,line.len,"action:")) {
+	        i = 8;
+	        while (line.s[i] == ' ' || line.s[i] == '\t')
+		  if (++i >= line.len) break;
+	        if (case_startb(line.s + i, line.len - i,"failed"))
+		  _exit(0);	/* failure notice */
+		else
+		  _exit(99);	/* there shouldn't be more than 1 action */
+	      }
+            }
+	  }
+        }
+      } else
+	get(&line);
+    }
   }
 
   get(&line1);

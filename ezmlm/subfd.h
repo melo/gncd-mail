@@ -3,13 +3,8 @@
 
 #include "substdio.h"
 
-extern substdio *subfdin;
-extern substdio *subfdinsmall;
-extern substdio *subfdout;
-extern substdio *subfdoutsmall;
-extern substdio *subfderr;
-
-extern int subfd_read();
-extern int subfd_readsmall();
+extern substdio *const subfdin;
+extern substdio *const subfdout;
+extern substdio *const subfderr;
 
 #endif

@@ -1,61 +1,66 @@
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "stralloc.h"
+#include "byte.h"
 #include "slurp.h"
 #include "strerr.h"
 #include "getconf.h"
+#include "altpath.h"
+#include "die.h"
+#include "config.h"
+#include "copy.h"
+#include "idx.h"
+#include "wrap.h"
+#include "messages.h"
 
 static stralloc data = {0};
+static stralloc xdata = {0};
 
-void nomem(fatal)
-char *fatal;
-{
-  strerr_die2x(111,fatal,"out of memory");
-}
-
-int getconf(sa,fn,flagrequired,fatal,dir)
-stralloc *sa;
-char *fatal;
-int flagrequired;
-char *dir;
-char *fn;
+int getconf(stralloc *sa,const char *fn,int flagrequired)
 {
   int i;
-  int j;
+  unsigned int j;
   int k;
 
   if (!stralloc_copys(&data,""))
-    nomem(fatal);
-  switch(slurp(fn,&data,128)) {
+    die_nomem();
+  switch (alt_slurp(fn,&data,128)) {
     case -1:
-      strerr_die6sys(111,fatal,"unable to read ",dir,"/",fn,": ");
+      strerr_die2sys(111,FATAL,MSG1(ERR_READ,fn));
     case 0:
       if (!flagrequired)
 	return 0;
-      strerr_die5x(100,fatal,dir,"/",fn," does not exist");
+      strerr_die5x(100,FATAL,listdir,"/",fn,MSG(ERR_NOEXIST));
   }
-  if (!stralloc_append(&data,"\n")) nomem(fatal);
-  if (!stralloc_copys(sa,"")) nomem(fatal);
+  if (!stralloc_append(&data,"\n")) die_nomem();
+  copy_xlate(&xdata,&data,0,'H');
+  if (!stralloc_copys(sa,"")) die_nomem();
   i = 0;
-  for (j = 0;j < data.len;++j)
-    if (data.s[j] == '\n') {
+  for (j = 0;j < xdata.len;++j)
+    if (xdata.s[j] == '\n') {
       k = j;
-      while ((k > i) && ((data.s[k-1] == ' ') || (data.s[k-1] == '\t'))) --k;
-      if ((k > i) && (data.s[i] != '#')) {
-        if (!stralloc_catb(sa,data.s + i,k - i)) nomem(fatal);
-        if (!stralloc_0(sa)) nomem(fatal);
+      while ((k > i) && ((xdata.s[k-1] == ' ') || (xdata.s[k-1] == '\t'))) --k;
+      if ((k > i) && (xdata.s[i] != '#')) {
+        if (!stralloc_catb(sa,xdata.s + i,k - i)) die_nomem();
+        if (!stralloc_0(sa)) die_nomem();
       }
       i = j + 1;
     }
   return 1;
 }
 
-int getconf_line(sa,fn,flagrequired,fatal,dir)
-stralloc *sa;
-char *fatal;
-int flagrequired;
-char *dir;
-char *fn;
+int getconf_isset(const char *fn)
 {
-  if (!getconf(sa,fn,flagrequired,fatal,dir)) return 0;
+  struct stat st;
+  int i;
+  if ((i = flag_isnameset(fn)) >= 0)
+    return i;
+  return wrap_stat(fn,&st) == 0;
+}
+
+int getconf_line(stralloc *sa,const char *fn,int flagrequired)
+{
+  if (!getconf(sa,fn,flagrequired)) return 0;
   sa->len = byte_chr(sa->s,sa->len,0);
   return 1;
 }

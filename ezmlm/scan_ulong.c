@@ -1,11 +1,16 @@
+/* Public domain, from daemontools-0.76. */
+
 #include "scan.h"
 
-unsigned int scan_ulong(s,u) register char *s; register unsigned long *u;
+unsigned int scan_ulong(const char *s,unsigned long *u)
 {
-  register unsigned int pos; register unsigned long result;
-  register unsigned long c;
-  pos = 0; result = 0;
-  while ((c = (unsigned long) (unsigned char) (s[pos] - '0')) < 10)
-    { result = result * 10 + c; ++pos; }
-  *u = result; return pos;
+  unsigned int pos = 0;
+  unsigned long result = 0;
+  unsigned long c;
+  while ((c = (unsigned long) (unsigned char) (s[pos] - '0')) < 10) {
+    result = result * 10 + c;
+    ++pos;
+  }
+  *u = result;
+  return pos;
 }

@@ -1,12 +1,12 @@
+/* Public domain, from djbdns-1.05. */
+/* As per http://cr.yp.to/djbdns/res-disaster.html */
+
 #include "case.h"
 
-int case_diffb(s,len,t)
-register char *s;
-unsigned int len;
-register char *t;
+int case_diffb(const char *s,unsigned int len,const char *t)
 {
-  register unsigned char x;
-  register unsigned char y;
+  unsigned char x;
+  unsigned char y;
 
   while (len > 0) {
     --len;

@@ -1,12 +1,9 @@
 #include "case.h"
 
-int case_startb(s,len,t)
-register char *s;
-unsigned int len;
-register char *t;
+int case_startb(const char *s,unsigned int len,const char *t)
 {
-  register unsigned char x;
-  register unsigned char y;
+  unsigned char x;
+  unsigned char y;
 
   for (;;) {
     y = *t++ - 'A';

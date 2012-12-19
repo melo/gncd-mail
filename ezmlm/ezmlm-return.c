@@ -1,12 +1,20 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <unistd.h>
+#include "direntry.h"
 #include "stralloc.h"
 #include "str.h"
 #include "env.h"
+#include "sender.h"
 #include "sig.h"
-#include "slurp.h"
-#include "getconf.h"
 #include "strerr.h"
 #include "byte.h"
 #include "case.h"
+#include "open.h"
+#include "scan.h"
+#include "lock.h"
+#include "slurpclose.h"
 #include "getln.h"
 #include "substdio.h"
 #include "error.h"
@@ -15,19 +23,35 @@
 #include "fmt.h"
 #include "now.h"
 #include "cookie.h"
-#include "subscribe.h"
-#include "issub.h"
+#include "getconfopt.h"
+#include "subdb.h"
+#include "messages.h"
+#include "die.h"
+#include "wrap.h"
+#include "config.h"
+#include "idx.h"
+#include "auto_version.h"
 
-#define FATAL "ezmlm-return: fatal: "
-void die_usage() { strerr_die1x(100,"ezmlm-return: usage: ezmlm-return dir"); }
-void die_nomem() { strerr_die2x(111,FATAL,"out of memory"); }
-void die_badaddr()
+const char FATAL[] = "ezmlm-return: fatal: ";
+const char INFO[] = "ezmlm-return: info: ";
+const char USAGE[] =
+"ezmlm-return: usage: ezmlm-return [-dD] dir";
+
+static int flagdig = 0;
+
+static struct option options[] = {
+  OPT_FLAG(flagdig,'d',1,0),
+  OPT_FLAG(flagdig,'D',0,0),
+  OPT_END
+};
+
+void die_badretaddr(void)
 {
-  strerr_die2x(100,FATAL,"I do not accept messages at this address (#5.1.1)");
+  strerr_die2x(100,FATAL,MSG(ERR_BAD_RETURN_ADDRESS));
 }
-void die_trash()
+void die_trash(void)
 {
-  strerr_die1x(0,"ezmlm-return: info: trash address");
+  strerr_die2x(99,INFO,"trash address");
 }
 
 char outbuf[1024];
@@ -38,38 +62,63 @@ substdio ssin;
 char strnum[FMT_ULONG];
 char hash[COOKIE];
 char hashcopy[COOKIE];
+char *hashp = (char *) 0;
 unsigned long cookiedate;
+unsigned long addrno = 0L;
+unsigned long addrno1 = 0L;
+stralloc fndir = {0};
 stralloc fndate = {0};
 stralloc fndatenew = {0};
 stralloc fnhash = {0};
 stralloc fnhashnew = {0};
 
 stralloc quoted = {0};
-char *sender;
+const char *sender;
+const char *dir;
+const char *workdir;
 
-void die_hashnew()
-{ strerr_die4sys(111,FATAL,"unable to write ",fnhashnew.s,": "); }
-void die_datenew()
-{ strerr_die4sys(111,FATAL,"unable to write ",fndatenew.s,": "); }
-void die_msgin()
-{ strerr_die2sys(111,FATAL,"unable to read input: "); }
+void die_hashnew(void)
+{ strerr_die2sys(111,FATAL,MSG1(ERR_WRITE,fnhashnew.s)); }
+void die_datenew(void)
+{ strerr_die2sys(111,FATAL,MSG1(ERR_WRITE,fndatenew.s)); }
+void die_msgin(void)
+{ strerr_die2sys(111,FATAL,MSG(ERR_READ_INPUT)); }
 
-void dowit(addr,when,bounce)
-char *addr;
-unsigned long when;
-stralloc *bounce;
+void makedir(const char *s)
+{
+  if (mkdir(s,0755) == -1)
+    if (errno != error_exist)
+      strerr_die2sys(111,FATAL,MSG1(ERR_CREATE,s));
+}
+
+void dowit(const char *addr,unsigned long when,const stralloc *bounce)
 {
   int fd;
+  unsigned int wpos;
+  unsigned long wdir,wfile;
 
-  if (!issub(addr)) return;
+  if (!issub(workdir,addr,0)) return;
 
-  if (!stralloc_copys(&fndate,"bounce/w")) die_nomem();
-  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,when))) die_nomem();
+  if (!stralloc_copys(&fndate,workdir)) die_nomem();
+  if (!stralloc_cats(&fndate,"/bounce/d")) die_nomem();
+  if (!stralloc_0(&fndate)) die_nomem();
+  fndate.s[fndate.len - 1] = '/';	/* replace '\0' */
+  wpos = fndate.len - 1;
+  wdir = when / 10000;
+  wfile = when - 10000 * wdir;
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,wdir))) die_nomem();
+  if (!stralloc_0(&fndate)) die_nomem();
+  makedir(fndate.s);
+  --fndate.len;				/* remove terminal '\0' */
+  if (!stralloc_cats(&fndate,"/w")) die_nomem();
+  wpos = fndate.len - 1;
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,wfile))) die_nomem();
   if (!stralloc_cats(&fndate,".")) die_nomem();
-  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,(unsigned long) getpid()))) die_nomem();
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,(unsigned long) getpid())))
+	die_nomem();
   if (!stralloc_0(&fndate)) die_nomem();
   if (!stralloc_copy(&fndatenew,&fndate)) die_nomem();
-  fndatenew.s[7] = 'W';
+  fndatenew.s[wpos] = 'W';
 
   fd = open_trunc(fndatenew.s);
   if (fd == -1) die_datenew();
@@ -85,28 +134,45 @@ stralloc *bounce;
   if (fsync(fd) == -1) die_datenew();
   if (close(fd) == -1) die_datenew(); /* NFS stupidity */
 
-  if (rename(fndatenew.s,fndate.s) == -1)
-    strerr_die6sys(111,FATAL,"unable to rename ",fndatenew.s," to ",fndate.s,": ");
+  wrap_rename(fndatenew.s,fndate.s);
 }
 
-void doit(addr,msgnum,when,bounce)
-char *addr;
-unsigned long msgnum;
-unsigned long when;
-stralloc *bounce;
+void doit(const char *addr,unsigned long msgnum,unsigned long when,
+	  const stralloc *bounce)
 {
   int fd;
   int fdnew;
+  unsigned int pos;
+  unsigned long ddir,dfile;
 
-  if (!issub(addr)) return;
+  if (!issub(workdir,addr,0)) return;
 
-  if (!stralloc_copys(&fndate,"bounce/d")) die_nomem();
-  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,when))) die_nomem();
+  if (!stralloc_copys(&fndate,workdir)) die_nomem();
+  if (!stralloc_cats(&fndate,"/bounce/d")) die_nomem();
+  if (!stralloc_0(&fndate)) die_nomem();
+  makedir(fndate.s);
+  fndate.s[fndate.len-1] = '/';		/* replace terminal '\0' */
+  ddir = when / 10000;
+  dfile = when - 10000 * ddir;
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,ddir))) die_nomem();
+  if (!stralloc_copy(&fndir,&fndate)) die_nomem();
+  if (!stralloc_0(&fndir)) die_nomem();	/* make later if necessary (new addr)*/
+  if (!stralloc_cats(&fndate,"/d")) die_nomem();
+  pos = fndate.len - 2;
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,dfile))) die_nomem();
   if (!stralloc_cats(&fndate,".")) die_nomem();
-  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,(unsigned long) getpid()))) die_nomem();
+  if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,(unsigned long) getpid())))
+	 die_nomem();
+  if (addrno) {	/* so that pre-VERP bounces make a d... file per address */
+		/* for the first one we use the std-style fname */
+    if (!stralloc_cats(&fndate,".")) die_nomem();
+    if (!stralloc_catb(&fndate,strnum,fmt_ulong(strnum,addrno))) die_nomem();
+  }
+  addrno++;	/* get ready for next */
   if (!stralloc_0(&fndate)) die_nomem();
   if (!stralloc_copy(&fndatenew,&fndate)) die_nomem();
-  fndatenew.s[7] = 'D';
+  fndatenew.s[pos] = '_';	/* fndate = bounce/d/nnnn/dmmmmmm */
+				/* fndatenew = bounce/d/nnnn_dmmmmmm */
 
   fd = open_trunc(fndatenew.s);
   if (fd == -1) die_datenew();
@@ -123,11 +189,21 @@ stralloc *bounce;
   if (close(fd) == -1) die_datenew(); /* NFS stupidity */
 
   cookie(hash,"",0,"",addr,"");
-  if (!stralloc_copys(&fnhash,"bounce/h")) die_nomem();
-  if (!stralloc_catb(&fnhash,hash,COOKIE)) die_nomem();
+  if (!stralloc_copys(&fnhash,workdir)) die_nomem();
+  if (!stralloc_cats(&fnhash,"/bounce/h")) die_nomem();
+  if (!stralloc_0(&fnhash)) die_nomem();
+  makedir(fnhash.s);
+  fnhash.s[fnhash.len - 1] = '/';		/* replace terminal '\0' */
+  if (!stralloc_catb(&fnhash,hash,1)) die_nomem();
+  if (!stralloc_0(&fnhash)) die_nomem();
+  makedir(fnhash.s);
+  --fnhash.len;					/* remove terminal '\0' */
+  if (!stralloc_cats(&fnhash,"/h")) die_nomem();
+  pos = fnhash.len - 1;
+  if (!stralloc_catb(&fnhash,hash+1,COOKIE-1)) die_nomem();
   if (!stralloc_0(&fnhash)) die_nomem();
   if (!stralloc_copy(&fnhashnew,&fnhash)) die_nomem();
-  fnhashnew.s[7] = 'H';
+  fnhashnew.s[pos] = 'H';
 
   fdnew = open_trunc(fnhashnew.s);
   if (fdnew == -1) die_hashnew();
@@ -136,9 +212,9 @@ stralloc *bounce;
   fd = open_read(fnhash.s);
   if (fd == -1) {
     if (errno != error_noent)
-      strerr_die4sys(111,FATAL,"unable to read ",fnhash.s,": ");
-    if (rename(fndatenew.s,fndate.s) == -1)
-      strerr_die6sys(111,FATAL,"unable to rename ",fndatenew.s," to ",fndate.s,": ");
+      strerr_die2sys(111,FATAL,MSG1(ERR_READ,fnhash.s));
+    makedir(fndir.s);
+    wrap_rename(fndatenew.s,fndate.s);
   }
   else {
     substdio_fdbuf(&ssin,read,fd,inbuf,sizeof(inbuf));
@@ -148,7 +224,7 @@ stralloc *bounce;
     }
     close(fd);
     if (unlink(fndatenew.s) == -1)
-      strerr_die4sys(111,FATAL,"unable to unlink ",fndatenew.s,": ");
+      strerr_die2sys(111,FATAL,MSG1(ERR_DELETE,fndatenew.s));
   }
   if (substdio_puts(&ssout,"   ") == -1) die_hashnew();
   if (substdio_put(&ssout,strnum,fmt_ulong(strnum,msgnum)) == -1) die_hashnew();
@@ -157,8 +233,7 @@ stralloc *bounce;
   if (fsync(fdnew) == -1) die_hashnew();
   if (close(fdnew) == -1) die_hashnew(); /* NFS stupidity */
 
-  if (rename(fnhashnew.s,fnhash.s) == -1)
-    strerr_die6sys(111,FATAL,"unable to rename ",fnhashnew.s," to ",fnhash.s,": ");
+  wrap_rename(fnhashnew.s,fnhash.s);
 }
 
 stralloc bounce = {0};
@@ -167,137 +242,156 @@ stralloc header = {0};
 stralloc intro = {0};
 stralloc failure = {0};
 stralloc paragraph = {0};
+int flagmasterbounce = 0;
 int flaghaveheader;
 int flaghaveintro;
-
-stralloc key = {0};
-stralloc inhost = {0};
-stralloc outhost = {0};
-stralloc inlocal = {0};
-stralloc outlocal = {0};
 
 char msginbuf[1024];
 substdio ssmsgin;
 
-void main(argc,argv)
-int argc;
-char **argv;
+int main(int argc,char **argv)
 {
-  char *dir;
-  char *host;
-  char *local;
   char *action;
+  const char *ret;
+  char *cp;
   unsigned long msgnum;
   unsigned long cookiedate;
   unsigned long when;
+  unsigned long listno = 0L;
   int match;
-  int i;
+  unsigned int i;
+  int flagmaster = 0;
+  int flagreceipt = 0;
   int fdlock;
+  char ch;
 
   umask(022);
   sig_pipeignore();
   when = (unsigned long) now();
 
-  dir = argv[1];
-  if (!dir) die_usage();
+  getconfopt(argc,argv,options,1,0);
 
-  sender = env_get("SENDER");
-  if (!sender) strerr_die2x(100,FATAL,"SENDER not set");
-  local = env_get("LOCAL");
-  if (!local) strerr_die2x(100,FATAL,"LOCAL not set");
-  host = env_get("HOST");
-  if (!host) strerr_die2x(100,FATAL,"HOST not set");
+  sender = get_sender();
+  if (!sender) die_sender();
+  action = env_get("DEFAULT");
+  if (!action) strerr_die2x(100,FATAL,MSG(ERR_NODEFAULT));
 
-  if (chdir(dir) == -1)
-    strerr_die4sys(111,FATAL,"unable to switch to ",dir,": ");
+  initsub(0);
 
-  switch(slurp("key",&key,32)) {
-    case -1:
-      strerr_die4sys(111,FATAL,"unable to read ",dir,"/key: ");
-    case 0:
-      strerr_die3x(100,FATAL,dir,"/key does not exist");
-  }
-  getconf_line(&inhost,"inhost",1,FATAL,dir);
-  getconf_line(&inlocal,"inlocal",1,FATAL,dir);
-  getconf_line(&outhost,"outhost",1,FATAL,dir);
-  getconf_line(&outlocal,"outlocal",1,FATAL,dir);
-
-  if (inhost.len != str_len(host)) die_badaddr();
-  if (case_diffb(inhost.s,inhost.len,host)) die_badaddr();
-  if (inlocal.len > str_len(local)) die_badaddr();
-  if (case_diffb(inlocal.s,inlocal.len,local)) die_badaddr();
-
-  action = local + inlocal.len;
-
-  if (!str_start(action,"-return-")) die_badaddr();
-  action += 8;
+    if (str_start(action,"receipt-")) {
+      flagreceipt = 1;
+      action += 8;
+    }
+    ch = *action;		/* -d -digest, -m -master, -g -getmaster */
+    if (ch && action[1] == '-') {
+      switch (ch) {
+	case 'g': flagmaster = 1; flagdig = 1; action += 2; break;
+	case 'm': flagmaster = 1; action += 2; break;
+	default: break;
+      }
+    }
+  workdir = flagdig ? "digest" : ".";
 
   if (!*action) die_trash();
 
-  if (str_start(action,"probe-")) {
-    action += 6;
-    action += scan_ulong(action,&cookiedate);
-    if (now() - cookiedate > 3000000) die_trash();
-    if (*action++ != '.') die_trash();
-    i = str_chr(action,'-');
-    if (i != COOKIE) die_trash();
-    byte_copy(hashcopy,COOKIE,action);
-    action += COOKIE;
-    if (*action++ != '-') die_trash();
-    i = str_rchr(action,'=');
-    if (!stralloc_copyb(&line,action,i)) die_nomem();
-    if (action[i]) {
-      if (!stralloc_cats(&line,"@")) die_nomem();
-      if (!stralloc_cats(&line,action + i + 1)) die_nomem();
-    }
-    if (!stralloc_0(&line)) die_nomem();
-    strnum[fmt_ulong(strnum,cookiedate)] = 0;
-    cookie(hash,key.s,key.len,strnum,line.s,"P");
-    if (byte_diff(hash,COOKIE,hashcopy)) die_trash();
-
-    if (subscribe(line.s,0) == 1) log("-probe",line.s);
-    _exit(0);
+  if (flagreceipt || flagmaster)			/* check cookie */
+    if (str_chr(action,'-') == COOKIE) {
+      action[COOKIE] = '\0';
+      hashp = action;
+      action += COOKIE + 1;
   }
 
-  fdlock = open_append("lockbounce");
-  if (fdlock == -1)
-    strerr_die4sys(111,FATAL,"unable to open ",dir,"/lockbounce: ");
-  if (lock_ex(fdlock) == -1)
-    strerr_die4sys(111,FATAL,"unable to lock ",dir,"/lockbounce: ");
+  if (!flagreceipt) {
+    if (!flagmaster && str_start(action,"probe-")) {
+      action += 6;
+      action += scan_ulong(action,&cookiedate);
+      if (now() - cookiedate > 3000000) die_trash();
+      if (*action++ != '.') die_trash();
+      i = str_chr(action,'-');
+      if (i != COOKIE) die_trash();
+      byte_copy(hashcopy,COOKIE,action);
+      action += COOKIE;
+      if (*action++ != '-') die_trash();
+      i = str_rchr(action,'=');
+      if (!stralloc_copyb(&line,action,i)) die_nomem();
+      if (action[i]) {
+	if (!stralloc_cats(&line,"@")) die_nomem();
+	if (!stralloc_cats(&line,action + i + 1)) die_nomem();
+      }
+      if (!stralloc_0(&line)) die_nomem();
+      strnum[fmt_ulong(strnum,cookiedate)] = 0;
+      cookie(hash,key.s,key.len,strnum,line.s,"P");
+      if (byte_diff(hash,COOKIE,hashcopy)) die_trash();
 
-  if (str_start(action,"warn-")) {
-    action += 5;
-    action += scan_ulong(action,&cookiedate);
-    if (now() - cookiedate > 3000000) die_trash();
-    if (*action++ != '.') die_trash();
-    i = str_chr(action,'-');
-    if (i != COOKIE) die_trash();
-    byte_copy(hashcopy,COOKIE,action);
-    action += COOKIE;
-    if (*action++ != '-') die_trash();
-    i = str_rchr(action,'=');
-    if (!stralloc_copyb(&line,action,i)) die_nomem();
-    if (action[i]) {
-      if (!stralloc_cats(&line,"@")) die_nomem();
-      if (!stralloc_cats(&line,action + i + 1)) die_nomem();
+      (void) subscribe(workdir,line.s,0,"","-probe",-1);
+      _exit(99);
     }
+
+    if (!stralloc_copys(&line,workdir)) die_nomem();
+    if (!stralloc_cats(&line,"/lockbounce")) die_nomem();
     if (!stralloc_0(&line)) die_nomem();
-    strnum[fmt_ulong(strnum,cookiedate)] = 0;
-    cookie(hash,key.s,key.len,strnum,line.s,"W");
-    if (byte_diff(hash,COOKIE,hashcopy)) die_trash();
 
-    if (slurpclose(0,&bounce,1024) == -1) die_msgin();
-    dowit(line.s,when,&bounce);
-    _exit(0);
+    fdlock = lockfile(line.s);
+
+    if (!flagmaster && str_start(action,"warn-")) {
+      action += 5;
+      action += scan_ulong(action,&cookiedate);
+      if (now() - cookiedate > 3000000) die_trash();
+      if (*action++ != '.') die_trash();
+      i = str_chr(action,'-');
+      if (i != COOKIE) die_trash();
+      byte_copy(hashcopy,COOKIE,action);
+      action += COOKIE;
+      if (*action++ != '-') die_trash();
+      i = str_rchr(action,'=');
+      if (!stralloc_copyb(&line,action,i)) die_nomem();
+      if (action[i]) {
+        if (!stralloc_cats(&line,"@")) die_nomem();
+        if (!stralloc_cats(&line,action + i + 1)) die_nomem();
+      }
+      if (!stralloc_0(&line)) die_nomem();
+      strnum[fmt_ulong(strnum,cookiedate)] = 0;
+      cookie(hash,key.s,key.len,strnum,line.s,"W");
+      if (byte_diff(hash,COOKIE,hashcopy)) die_trash();
+
+      if (slurpclose(0,&bounce,1024) == -1) die_msgin();
+      dowit(line.s,when,&bounce);
+      _exit(99);
+    }
   }
-
   action += scan_ulong(action,&msgnum);
-  if (*action != '-') die_badaddr();
-  ++action;
+  if (*action++ != '-') die_badretaddr();
+  cp = action;
+  if (*action >= '0' && *action <= '9') {		/* listno */
+    action += scan_ulong(action,&listno);
+    listno++;					/* logging is 1-53, not 0-52 */
+  }
+
+  if (hashp) {		/* scrap bad cookies */
+      if ((ret = checktag(msgnum,0L,"x",(char *) 0,hashp))) {
+        if (*ret)
+	  strerr_die2x(111,FATAL,ret);
+	else
+	  die_trash();
+      } else if (flagreceipt) {
+	if (!(ret = logmsg(msgnum,listno,0L,5))) {
+	  closesub();
+	  strerr_die6x(99,INFO,"receipt:",cp," [",hashp,"]");
+	}
+	if (*ret) strerr_die2x(111,FATAL,ret);
+	else strerr_die2x(0,INFO,MSG(ERR_DONE));
+      } else if (*action) {	/* post VERP master bounce */
+	if ((ret = logmsg(msgnum,listno,0L,-1))) {
+	  closesub();
+	  strerr_die4x(0,INFO,"bounce [",hashp,"]");
+	}
+	if (*ret) strerr_die2x(111,FATAL,ret);
+	else strerr_die2x(99,INFO,MSG(ERR_DONE));
+      }
+   } else if (flagreceipt || flagmaster)
+	die_badretaddr();
 
   if (*action) {
-    if (slurpclose(0,&bounce,1024) == -1) die_msgin();
-
     i = str_rchr(action,'=');
     if (!stralloc_copyb(&line,action,i)) die_nomem();
     if (action[i]) {
@@ -305,11 +399,12 @@ char **argv;
       if (!stralloc_cats(&line,action + i + 1)) die_nomem();
     }
     if (!stralloc_0(&line)) die_nomem();
+    if (slurpclose(0,&bounce,1024) == -1) die_msgin();
     doit(line.s,msgnum,when,&bounce);
-    _exit(0);
+    _exit(99);
   }
 
-  /* pre-VERP bounce, in QSBMF format */
+  /* pre-VERP bounce, in QSBMF format. Receipts are never pre-VERP */
 
   substdio_fdbuf(&ssmsgin,read,0,msginbuf,sizeof(msginbuf));
 
@@ -332,6 +427,8 @@ char **argv;
     }
 
     if (!flaghaveintro) {
+      if (paragraph.s[0] == '-' && paragraph.s[1] == '-')
+        continue;		/* skip MIME boundary if it exists */
       if (paragraph.len < 15) die_trash();
       if (str_diffn(paragraph.s,"Hi. This is the",15)) die_trash();
       if (!stralloc_copy(&intro,&paragraph)) die_nomem();
@@ -355,10 +452,24 @@ char **argv;
       if (!stralloc_copyb(&line,failure.s + 1,i - 3)) die_nomem();
       if (byte_chr(line.s,line.len,'\0') == line.len) {
         if (!stralloc_0(&line)) die_nomem();
-        doit(line.s,msgnum,when,&bounce);
+        if (flagmaster) {				/* bounced msg slave! */
+	  if ((i = str_rchr(line.s,'@')) >= 5) {	/* 00_52@host */
+	    line.s[i] = '\0';				/* 00_52 */
+	    (void) scan_ulong(line.s + i - 5,&listno);
+	    if ((ret = logmsg(msgnum,listno + 1,0L,-1)) && *ret)
+	      strerr_die2x(111,FATAL,ret);
+	    strerr_warn3(INFO,"bounce ",line.s + i - 5,(struct strerr *) 0);
+	    flagmasterbounce = 1;
+	  }
+	} else
+	  doit(line.s,msgnum,when,&bounce);
       }
     }
   }
-
-  _exit(0);
+  closesub();
+  if (flagmasterbounce)
+    strerr_die3x(0,"[",hashp,"]");
+  else
+    _exit(99);
+  (void)argc;
 }

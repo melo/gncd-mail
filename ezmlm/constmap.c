@@ -2,9 +2,7 @@
 #include "alloc.h"
 #include "case.h"
 
-static constmap_hash hash(s,len)
-char *s;
-int len;
+static constmap_hash hash(const char *s,int len)
 {
   unsigned char ch;
   constmap_hash h;
@@ -18,10 +16,34 @@ int len;
   return h;
 }
 
-char *constmap(cm,s,len)
-struct constmap *cm;
-char *s;
-int len;
+/* Returns index of string in constmap. 1 = first string, 2 = second ... */
+/* 0 not found. Use for commands */ 
+int constmap_index(const struct constmap *cm,const char *s,int len)
+{
+  constmap_hash h;
+  int pos;
+  h = hash(s,len);
+  pos = cm->first[h & cm->mask];
+  while (pos != -1) {
+    if (h == cm->hash[pos])
+      if (len == cm->inputlen[pos])
+        if (!case_diffb(cm->input[pos],len,s))
+	  return pos + 1;
+    pos = cm->next[pos];
+  }
+  return 0;
+}
+
+/* returns pointer to sz of string with index "idx". 1 = first, 2 = second...*/
+const char *constmap_get(struct constmap *cm,unsigned int idx)
+{
+  if (idx <= 0 || idx > cm->num)
+    return 0;
+  else
+    return cm->input[idx-1];
+}
+
+const char *constmap(struct constmap *cm,const char *s,int len)
 {
   constmap_hash h;
   int pos;
@@ -37,11 +59,10 @@ int len;
   return 0;
 }
 
-int constmap_init(cm,s,len,flagcolon)
-struct constmap *cm;
-char *s;
-int len;
-int flagcolon;
+int constmap_init(struct constmap *cm,const char *s,int len,int splitchar)
+/* if splitchar is set, we process only the stuff before that character
+ * on each line. Otherwise, it's the entire line. Still, the entire line
+ * is stored! */
 {
   int i;
   int j;
@@ -58,7 +79,7 @@ int flagcolon;
  
   cm->first = (int *) alloc(sizeof(int) * h);
   if (cm->first) {
-    cm->input = (char **) alloc(sizeof(char *) * cm->num);
+    cm->input = (const char **) alloc(sizeof(char *) * cm->num);
     if (cm->input) {
       cm->inputlen = (int *) alloc(sizeof(int) * cm->num);
       if (cm->inputlen) {
@@ -73,9 +94,9 @@ int flagcolon;
             for (j = 0;j < len;++j)
               if (!s[j]) {
 	        k = j - i;
-	        if (flagcolon) {
+	        if (splitchar) {
 		  for (k = i;k < j;++k)
-		    if (s[k] == ':')
+		    if (s[k] == splitchar)
 		      break;
 		  if (k >= j) { i = j + 1; continue; }
 		  k -= i;
@@ -103,8 +124,7 @@ int flagcolon;
   return 0;
 }
 
-void constmap_free(cm)
-struct constmap *cm;
+void constmap_free(struct constmap *cm)
 {
   alloc_free(cm->next);
   alloc_free(cm->hash);
