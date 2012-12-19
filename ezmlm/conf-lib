@@ -1,3 +1,3 @@
-/usr/local/lib/ezmlm
+/home/mailsrv/apps/ezmlm/lib
 
 This is the directory in which plugins will get installed.
