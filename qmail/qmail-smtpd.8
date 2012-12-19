@@ -77,6 +77,17 @@ If the environment variable
 is set, it overrides
 .IR databytes .
 .TP 5
+.I earlytalkerdroptime
+Number of seconds to wait before issuing the welcome prompt.
+Default: 0. If any input is received before the welcome prompt the
+session is terminated.  This can be helpful to trap junk SMTP traffic
+(well-behaved MTAs will wait for the welcome prompt before sending).
+
+If the environment variable
+.B EARLYTALKERDROPTIME
+is set, it overrides
+.IR earlytalkerdroptime .
+.TP 5
 .I localiphost
 Replacement host name for local IP addresses.
 Default:
