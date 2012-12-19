@@ -337,6 +337,7 @@ int vrtcheck()
 {
   static char *rcptto = "checking RCPT TO";
   static char *found = "found";
+  static char *not_found = "did not find";
   static char *reject = "rejected";
   char *f = 0;
   int j,k,r;
@@ -407,6 +408,7 @@ int vrtcheck()
     return 1;
   }
 
+  vrtlog(not_found, laddr.s);
   return 0;
 }
 
