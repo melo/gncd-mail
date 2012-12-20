@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# qmail-smtpd run file
+#
+
+exec 2>&1
+
+[ -e "$SRV_CONFIG" ] || (echo "FATAL: failed to find $SRV_CONFIG"; exit 1)
+. $SRV_CONFIG
+
+which qmail-smtpd
+
+exec env - PATH="$QMAIL_DIR/bin:$PATH"                     \
+     tcpserver -RHv -c80 -u`id -u qmaild` -g`id -g qmaild` \
+       -x "$WORKSPACE_DIR"/qmail-smtpd-acl.cdb             \
+       0 25 qmail-smtpd
