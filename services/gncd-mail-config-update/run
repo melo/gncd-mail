@@ -44,6 +44,9 @@ echo "... update qmail system aliases"
   chown -h alias:nofiles "$dst_dir"/.qmail-*
 )
 
+echo "... update valid recipients database"
+"$RELEASE_DIR/sbin/mkvalidrcptto" -c "$WORKSPACE_DIR/valid_rcpt_to.cdb"
+
 echo "### Done config-update run using '$CFG' config"
 echo ""
 echo ""
