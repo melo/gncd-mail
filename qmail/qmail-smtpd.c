@@ -78,9 +78,11 @@ void die_nomem()
   enew(); eout("Out of memory: quitting\n"); eflush();
   out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1);
 }
-void die_control()
+void die_control(file) char *file;
 {
-  enew(); eout("Unable to read controls: quitting\n"); eflush();
+  enew(); eout("Unable to read '");
+  eout(file);
+  eout("' control file: quitting\n"); eflush();
   out("421 unable to read controls (#4.3.0)\r\n"); flush(); _exit(1);
 }
 void die_ipme()
@@ -204,35 +206,35 @@ void setup()
   char *x;
   unsigned long u;
  
-  if (control_init() == -1) die_control();
+  if (control_init() == -1) die_control("<control_init() call>");
   if (control_rldef(&greeting,"control/smtpgreeting",1,(char *) 0) != 1)
-    die_control();
+    die_control("control/smtpgreeting");
   liphostok = control_rldef(&liphost,"control/localiphost",1,(char *) 0);
-  if (liphostok == -1) die_control();
-  if (control_readint(&timeout,"control/timeoutsmtpd") == -1) die_control();
+  if (liphostok == -1) die_control("control/localiphost");
+  if (control_readint(&timeout,"control/timeoutsmtpd") == -1) die_control("control/timeoutsmtpd");
   if (timeout <= 0) timeout = 1;
 
-  if (rcpthosts_init() == -1) die_control();
+  if (rcpthosts_init() == -1) die_control("<rcpthosts_init() call>");
 
   bmfok = control_readfile(&bmf,"control/badmailfrom",0);
-  if (bmfok == -1) die_control();
+  if (bmfok == -1) die_control("control/badmailfrom");
   if (bmfok)
     if (!constmap_init(&mapbmf,bmf.s,bmf.len,0)) die_nomem();
 
   x = env_get("VALIDRCPTTO_CDB");
   if(x && *x) {
     vrtfd = open_read(x);
-    if (-1 == vrtfd) die_control();
+    if (-1 == vrtfd) die_control(x);
   }
 
-  if (control_readint(&databytes,"control/databytes") == -1) die_control();
+  if (control_readint(&databytes,"control/databytes") == -1) die_control("control/databytes");
   x = env_get("DATABYTES");
   if (x) { scan_ulong(x,&u); databytes = u; }
   if (!(databytes + 1)) --databytes;
  
   remoteip = env_get("TCPREMOTEIP");
   if (!remoteip) remoteip = "unknown";
-  if (control_readint(&earlytalkerdroptime,"control/earlytalkerdroptime") == -1) die_control();
+  if (control_readint(&earlytalkerdroptime,"control/earlytalkerdroptime") == -1) die_control("control/earlytalkerdroptime");
   x = env_get("EARLYTALKERDROPTIME");
   if (x) { scan_ulong(x,&u); earlytalkerdroptime = u; }
   local = env_get("TCPLOCALHOST");
@@ -416,7 +418,7 @@ int addrallowed()
 {
   int r;
   r = rcpthosts(addr.s,str_len(addr.s));
-  if (r == -1) die_control();
+  if (r == -1) die_control("rcpthosts() call failed");
   return r;
 }
 
@@ -662,7 +664,7 @@ int main()
   uint32 u;
   sig_pipeignore();
   /* esetfd(2); Errors default to FD2 (stderr), change here if needed */
-  if (chdir(auto_qmail) == -1) die_control();
+  if (chdir(auto_qmail) == -1) die_control("<chdir(auto_qmail) call failed>");
 
   x = env_get("VALIDRCPTTO_LIMIT");
   if(x) { scan_ulong(x,&u); vrtlimit = (int) u; }
