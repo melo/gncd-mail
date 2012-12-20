@@ -1,0 +1,11 @@
+#!/usr/bin/env perl
+#
+# Filter to replace $VAR with ENV VAR value
+#
+
+use strict;
+
+while (<>) {
+  s/\$([A-Z][A-Z0-9_]*)/defined $ENV{$1}? $ENV{$1} : die "FATAL: Env '$1' is undefined,"/ge;
+  print;
+}
