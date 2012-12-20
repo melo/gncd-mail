@@ -1,0 +1,40 @@
+#!/bin/sh
+
+MAKE="make -j 8"
+
+${MAKE} clean
+${MAKE}
+${MAKE} man
+${MAKE} mysql
+./ezmlm-test
+
+cat <<EOF
+
+
+MySQL: setup the ezmlm database
+
+    CREATE DATABASE ezmlm;
+    GRANT create, alter, drop, index,
+          insert, select, update, delete, drop,
+          lock tables
+       ON ezmlm.*
+       TO ezmlm@127.0.0.1 identified by 'YuJ4R2Tbig';
+
+
+Press enter to proceed with MySQL tests, or type 'n' enter to skip...
+EOF
+
+read a
+if [ "$a" != "n" ] ; then
+  ./ezmlm-test -s mysql -u ezmlm -p YuJ4R2Tbig -h 127.0.0.1
+fi
+
+cat <<EOF
+
+
+Everything ok? If so enter 'y' to install.
+EOF
+read a
+if [ "$a" == "y" ] ; then
+  make install
+fi
