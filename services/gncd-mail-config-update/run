@@ -47,6 +47,12 @@ echo "... update qmail system aliases"
 echo "... update valid recipients database"
 "$RELEASE_DIR/sbin/mkvalidrcptto" -c "$WORKSPACE_DIR/valid_rcpt_to.cdb"
 
+echo "... make sure mailsrv has a valid ~/Maildir/"
+mkdir -p $HOME/Maildir/{new,cur,tmp}
+chmod 700 $HOME/Maildir/{new,cur,tmp}
+chown mailsrv:mailsrv $HOME/Maildir/{new,cur,tmp}
+
+
 echo "### Done config-update run using '$CFG' config"
 echo ""
 echo ""
