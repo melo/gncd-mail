@@ -74,6 +74,16 @@ int flagreadasap = 0; void sighup() { flagreadasap = 1; }
 void cleandied() { log1("alert: oh no! lost qmail-clean connection! dying...\n");
  flagexitasap = 1; }
 
+void die_controls() {
+  if (control_last.s) {
+    log3("alert: cannot start: unable to read controls (", control_last.s, ")\n");
+  }
+  else {
+    log1("alert: cannot start: unable to read controls\n");
+  }
+  _exit(111);
+}
+
 int flagspawnalive[CHANNELS];
 void spawndied(c) int c; { log1("alert: oh no! lost spawn connection! dying...\n");
  flagspawnalive[c] = 0; flagexitasap = 1; }
@@ -1670,8 +1680,7 @@ int main()
 
  if (chdir(auto_qmail) == -1)
   { log1("alert: cannot start: unable to switch to home directory\n"); _exit(111); }
- if (!getcontrols())
-  { log1("alert: cannot start: unable to read controls\n"); _exit(111); }
+ if (!getcontrols()) die_controls();
  if (chdir("queue") == -1)
   { log1("alert: cannot start: unable to switch to queue directory\n"); _exit(111); }
  sig_pipeignore();
