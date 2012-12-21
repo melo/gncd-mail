@@ -1,0 +1,70 @@
+#!/bin/sh
+
+MAKE="make -j 8"
+
+
+chmod 711 /home/mailsrv
+mkdir -p /home/mailsrv/apps/qmail/alias
+
+cat <<EOM
+
+QMail requires this users:
+
+  groupadd nofiles
+  useradd -M -s /sbin/nologin -g nofiles -d /home/mailsrv/apps/qmail/alias alias
+  useradd -M -s /sbin/nologin -g nofiles -d /home/mailsrv/apps/qmail qmaild
+  useradd -M -s /sbin/nologin -g nofiles -d /home/mailsrv/apps/qmail qmaill
+  useradd -M -s /sbin/nologin -g nofiles -d /home/mailsrv/apps/qmail qmailp
+  groupadd qmail
+  useradd -M -s /sbin/nologin -g qmail -d /home/mailsrv/apps/qmail qmailq
+  useradd -M -s /sbin/nologin -g qmail -d /home/mailsrv/apps/qmail qmailr
+  useradd -M -s /sbin/nologin -g qmail -d /home/mailsrv/apps/qmail qmails
+
+  sudo chown qmaild:nofiles /home/mailsrv/apps/qmail
+  sudo chown alias:nofiles /home/mailsrv/apps/qmail/alias
+
+I'll wait... Press enter to keep going...
+EOM
+
+read a
+
+[ -e /var/qmail ] || sudo ln -s /home/mailsrv/apps/qmail /var/qmail
+
+echo "Compiling qmail... tail -f build.log to see what is going on"
+( ${MAKE} && sudo make setup check ) > build.log 2>&1
+
+if [ $? != 0 ] ; then
+  echo "Failed the compilation process!"
+  echo
+  echo
+  tail -20 build.log
+  exit 1
+fi
+
+cat <<'EOM'
+
+
+Compilation/installation is done!
+
+You need to start the services now.
+
+ 1) start the mailsrv svscan service. As root, do:
+ 
+    cd /service
+    ln -s /home/mailsrv/releases/services/gncd-mail-svscan
+    sleep 2
+    svstat gncd-mail-svscan/{.,log}
+
+ 2) As mailsrv, start the gncd-components:
+ 
+   cd ~/service
+   for comp in config-update qmail-send qmail-smtpd ; do
+     srv="gncd-mail-$comp"
+     ln -s ~/releases/services/$srv
+     [ -e "$srv/down" ] || sudo svc -o $srv
+     sleep 2
+     svstat $srv/{.,log}
+   done
+
+Enjoy!
+EOM

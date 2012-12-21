@@ -13,6 +13,8 @@ static stralloc line = {0};
 static stralloc me = {0};
 static int meok = 0;
 
+stralloc control_last = {0};
+
 static void striptrailingwhitespace(sa)
 stralloc *sa;
 {
@@ -56,6 +58,9 @@ char *fn;
  substdio ss;
  int fd;
  int match;
+
+ stralloc_copys(&control_last, fn);
+ stralloc_0(&control_last);
 
  fd = open_read(fn);
  if (fd == -1) { if (errno == error_noent) return 0; return -1; }
